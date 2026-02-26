@@ -1,0 +1,125 @@
+#cloud-config
+# Teleport Bastion — Configuration complète (immutable)
+# Variables à remplacer dans le Taskfile :
+#   {{CLUSTER_NAME}}
+#   {{BASTION_IP}}
+
+package_update: true
+package_upgrade: false
+
+
+# Ajouter le dépôt APT Teleport
+
+
+packages:
+  - curl
+  - wget
+  - jq
+  - net-tools
+  - gnupg
+  - apt-transport-https
+
+
+write_files:
+  # Configuration Teleport immutable
+  - path: /etc/teleport.yaml
+    permissions: '0644'
+    content: |
+      version: v3
+      teleport:
+        nodename: teleport-bastion
+        data_dir: /var/lib/teleport
+        log:
+          output: stderr
+          severity: INFO
+
+      auth_service:
+        enabled: yes
+        listen_addr: 0.0.0.0:3025
+        cluster_name: teleport-lab
+        tokens:
+          - "node,proxy,db,app:a373a1c1d9cb7cc343d149402029dbb6"
+
+      proxy_service:
+        enabled: yes
+        listen_addr: 0.0.0.0:3023
+        web_listen_addr: 0.0.0.0:3080
+        tunnel_listen_addr: 0.0.0.0:3024
+        public_addr: BASTION_IP:3080
+
+      ssh_service:
+        enabled: yes
+        labels:
+          role: bastion
+          env: lab
+
+  # Rôle RBAC pour le lab
+  - path: /etc/teleport/lab-role.yaml
+    permissions: '0644'
+    content: |
+      kind: role
+      version: v7
+      metadata:
+        name: lab-access
+      spec:
+        allow:
+          logins: ['ubuntu', 'root']
+          node_labels:
+            '*': '*'
+          db_labels:
+            '*': '*'
+          db_names: ['*']
+          db_users: ['*']
+          app_labels:
+            '*': '*'
+        deny: {}
+
+  # Script d'initialisation (créer le rôle et l'utilisateur admin après démarrage)
+  - path: /opt/teleport-init.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -e
+
+      echo "[init] Attente de l'accessibilité de tctl..."
+      until sudo tctl status &>/dev/null; do
+        sleep 2
+      done
+      echo "[init] tctl prêt"
+
+      # Créer le rôle RBAC
+      if sudo tctl create /etc/teleport/lab-role.yaml 2>/dev/null; then
+        echo "[init] Rôle lab-access créé"
+      else
+        echo "[init] Rôle lab-access déjà existant"
+      fi
+
+      # Créer l'utilisateur admin (une seule fois)
+      if ! sudo tctl users list 2>/dev/null | grep -q admin; then
+        echo "[init] Création de l'utilisateur admin..."
+        sudo tctl users add admin \
+          --roles=editor,access,lab-access \
+          --logins=ubuntu,root 2>&1 | tee /tmp/admin-invite.txt
+        cat /tmp/admin-invite.txt
+      else
+        echo "[init] Utilisateur admin déjà existant"
+      fi
+
+runcmd:
+  - LOCAL_IP=$(hostname -I | awk '{print $1}') ; sed -i "s|BASTION_IP|${LOCAL_IP}|g" /etc/teleport.yaml
+  - curl https://cdn.teleport.dev/install.sh | bash -s 18.7.1
+  # Démarrer Teleport
+  - systemctl enable teleport
+  - systemctl start teleport
+
+  # Script d'initialisation en arrière-plan (attend que Teleport soit prêt)
+  - bash /opt/teleport-init.sh &
+
+final_message: |
+  Teleport bastion opérationnel !
+
+  - Config : /etc/teleport.yaml
+  - Rôle RBAC : /etc/teleport/lab-role.yaml
+  - Initialisation : /opt/teleport-init.sh (asynchrone)
+
+  URL d'invitation admin : lire /tmp/admin-invite.txt une fois l'initialisation terminée

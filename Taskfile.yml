@@ -1,0 +1,244 @@
+version: '3'
+
+# =============================================================================
+# Variables — surchargables via .envrc
+# =============================================================================
+vars:
+  BASTION_VM:  '{{.BASTION_VM  | default "teleport-bastion"}}'
+  TARGET_VM:   '{{.TARGET_VM   | default "target-server"}}'
+  VM_CPUS:  '{{.VM_CPUS  | default "2"}}'
+  VM_MEM:   '{{.VM_MEM   | default "2G"}}'
+  VM_DISK:  '{{.VM_DISK  | default "20G"}}'
+  UBUNTU_IMAGE: '{{.UBUNTU_IMAGE | default "24.04"}}'
+
+
+# =============================================================================
+# Tâches
+# =============================================================================
+tasks:
+
+  default:
+    desc: Lister les tâches disponibles
+    silent: true
+    cmds:
+      - task --list
+
+  # ---------------------------------------------------------------------------
+  setup:
+    desc: "🚀 Bootstrap complet du lab Teleport (immutable)"
+    cmds:
+      - task: _check-deps
+      - task: _vm-create-bastion
+      - task: _vm-create-target
+      - task: _vm-wait-both
+      - task: _summary
+
+  # ---------------------------------------------------------------------------
+  destroy:
+    desc: "🗑️  Supprimer les VMs du lab"
+    prompt: "Supprimer {{.BASTION_VM}} et {{.TARGET_VM}} ?"
+    cmds:
+      - |
+        for vm in {{.BASTION_VM}} {{.TARGET_VM}}; do
+          if multipass info "$vm" &>/dev/null; then
+            multipass delete "$vm"
+          fi
+        done
+        multipass purge
+        rm -rf .join-token .invite-url .cloud-init
+        echo "Lab supprimé"
+
+  # ---------------------------------------------------------------------------
+  status:
+    desc: "📊 État et IPs des VMs"
+    silent: true
+    cmds:
+      - |
+        echo ""
+        echo "═══════════════════════════════════════════════"
+        echo "  TELEPORT LAB — STATUS"
+        echo "═══════════════════════════════════════════════"
+        for vm in {{.BASTION_VM}} {{.TARGET_VM}}; do
+          if multipass info "$vm" &>/dev/null 2>&1; then
+            state=$(multipass info "$vm" --format json | jq -r ".info.\"$vm\".state")
+            ip=$(multipass info "$vm" --format json | jq -r ".info.\"$vm\".ipv4[0]")
+            printf "  %-22s %-15s  (%s)\n" "$vm" "$ip" "$state"
+          else
+            printf "  %-22s %s\n" "$vm" "(non créé)"
+          fi
+        done
+        echo "═══════════════════════════════════════════════"
+        echo ""
+
+  shell:bastion:
+    desc: "🖥️  Shell sur le bastion Teleport"
+    cmds:
+      - multipass shell {{.BASTION_VM}}
+
+  shell:target:
+    desc: "🖥️  Shell sur le target server"
+    cmds:
+      - multipass shell {{.TARGET_VM}}
+
+  logs:bastion:
+    desc: "📋 Logs Teleport du bastion (live)"
+    cmds:
+      - multipass exec {{.BASTION_VM}} -- sudo journalctl -u teleport -f --no-pager
+
+  logs:target:
+    desc: "📋 Logs Teleport du target (live)"
+    cmds:
+      - multipass exec {{.TARGET_VM}} -- sudo journalctl -u teleport -f --no-pager
+
+  check-init:bastion:
+    desc: "Vérifier l'initialisation du bastion"
+    cmds:
+      - multipass exec {{.BASTION_VM}} -- bash -c 'echo "=== Cloud-init ===" && sudo cloud-init status --long && echo "" && echo "=== Teleport ===" && sudo systemctl status teleport --no-pager && echo "" && echo "=== Admin invite ===" && sudo cat /tmp/admin-invite.txt 2>/dev/null || echo "(pas encore créé)"'
+
+  check-init:target:
+    desc: "Vérifier l'initialisation du target"
+    cmds:
+      - multipass exec {{.TARGET_VM}} -- bash -c 'echo "=== Cloud-init ===" && sudo cloud-init status --long && echo "" && echo "=== Teleport ===" && sudo systemctl status teleport --no-pager && echo "" && echo "=== MySQL ===" && sudo systemctl status mysql --no-pager'
+
+  # ---------------------------------------------------------------------------
+  # Tâches internes
+  # ---------------------------------------------------------------------------
+
+  _check-deps:
+    internal: true
+    preconditions:
+      - sh: command -v multipass
+        msg: |
+          multipass n'est pas installé.
+          → https://multipass.run
+      - sh: command -v jq
+        msg: |
+          jq n'est pas installé.
+          → mise use jq   ou   sudo apt install jq
+      - sh: command -v openssl
+        msg: "openssl n'est pas installé."
+    cmds:
+      - echo "✓ Dépendances OK"
+
+
+
+  _vm-create-bastion:
+    internal: true
+    status:
+      - multipass info {{.BASTION_VM}}
+    cmds:
+      - |
+        echo "Création de {{.BASTION_VM}}..."
+        # Utiliser le cloud-init généré
+        multipass launch {{.UBUNTU_IMAGE}} \
+          --name {{.BASTION_VM}} \
+          --cpus {{.VM_CPUS}} \
+          --memory {{.VM_MEM}} \
+          --disk {{.VM_DISK}} \
+          --cloud-init cloud-init/teleport-bastion.yaml
+        echo "✓ {{.BASTION_VM}} créé"
+
+  _vm-create-target:
+    internal: true
+    vars:
+      BASTION_IP:
+        sh: |
+          # Attendre que le bastion ait une IP
+          until ip=$(multipass info {{.BASTION_VM}} --format json 2>/dev/null | jq -r '.info."{{.BASTION_VM}}".ipv4[0]' | grep -v null); do
+            sleep 1
+          done
+          echo "$ip"
+    status:
+      - multipass info {{.TARGET_VM}}
+    cmds:
+      - |
+        mkdir -p .cloud-init
+        BASTION_IP={{.BASTION_IP}} envsubst '${BASTION_IP}' \
+          < cloud-init/target-server.yaml \
+          > .cloud-init/target-server.yaml
+
+        echo "Création de {{.TARGET_VM}} (bastion: {{.BASTION_IP}})..."
+        multipass launch {{.UBUNTU_IMAGE}} \
+          --name {{.TARGET_VM}} \
+          --cpus {{.VM_CPUS}} \
+          --memory {{.VM_MEM}} \
+          --disk {{.VM_DISK}} \
+          --cloud-init .cloud-init/target-server.yaml
+        echo "✓ {{.TARGET_VM}} créé"
+
+  _vm-wait-both:
+    internal: true
+    cmds:
+      - |
+        echo ""
+        echo "Attente cloud-init bastion..."
+        until multipass exec {{.BASTION_VM}} -- sudo cloud-init status --wait 2>&1 | grep -q "status: done"; do
+          sleep 5
+        done
+        echo "✓ {{.BASTION_VM}} prêt"
+
+        echo ""
+        echo "Attente cloud-init target..."
+        until multipass exec {{.TARGET_VM}} -- sudo cloud-init status --wait 2>&1 | grep -q "status: done"; do
+          sleep 5
+        done
+        echo "✓ {{.TARGET_VM}} prêt"
+
+        echo ""
+        echo "Attente initialisation (scripts d'init peuvent être asynchrones)..."
+        sleep 15
+
+  _summary:
+    internal: true
+    silent: true
+    vars:
+      BASTION_IP:
+        sh: multipass info {{.BASTION_VM}} --format json | jq -r '.info."{{.BASTION_VM}}".ipv4[0]'
+      TARGET_IP:
+        sh: multipass info {{.TARGET_VM}} --format json | jq -r '.info."{{.TARGET_VM}}".ipv4[0]'
+    cmds:
+      - |
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║               TELEPORT LAB — DÉPLOYÉ                            ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        printf "  %-22s %s  (IP: %s)\n" "Bastion :" "{{.BASTION_VM}}" "{{.BASTION_IP}}"
+        printf "  %-22s %s  (IP: %s)\n" "Target :"  "{{.TARGET_VM}}"  "{{.TARGET_IP}}"
+        echo ""
+        echo "  ── INTERFACE WEB (Teleport) ────────────────────────────────────"
+        echo "  https://{{.BASTION_IP}}:3080"
+        echo "  (accepter le certificat auto-signé)"
+        echo ""
+        echo "  ── RÉCUPÉRER LE LIEN ADMIN ────────────────────────────────────"
+        echo "  task check-init:bastion    # voir /tmp/admin-invite.txt"
+        echo ""
+        echo "  ── CONNEXION TSH ──────────────────────────────────────────────"
+        echo "  tsh login --proxy={{.BASTION_IP}}:3080 --insecure --user=admin"
+        echo ""
+        echo "  ── ACCÈS SSH ──────────────────────────────────────────────────"
+        echo "  tsh ls                     # Lister les nodes"
+        echo "  tsh ssh ubuntu@target-server"
+        echo ""
+        echo "  ── ACCÈS APP (nginx) ──────────────────────────────────────────"
+        echo "  tsh apps ls"
+        echo "  tsh apps login nginx-app"
+        echo "  tsh proxy app nginx-app --port=8080"
+        echo "  # Puis : open http://localhost:8080"
+        echo ""
+        echo "  ── ACCÈS DB (MySQL) ────────────────────────────────────────────"
+        echo "  tsh db ls"
+        echo "  tsh db login mysql-lab --db-user=alice"
+        echo "  tsh db connect mysql-lab"
+        echo ""
+        echo "  ── COMMANDES UTILES ──────────────────────────────────────────"
+        echo "  task status            # État des VMs"
+        echo "  task logs:bastion      # Logs Teleport bastion (live)"
+        echo "  task logs:target       # Logs Teleport target (live)"
+        echo "  task check-init:*      # Vérifier l'initialisation"
+        echo "  task shell:bastion     # Shell interactif"
+        echo "  task destroy           # Supprimer le lab"
+        echo "══════════════════════════════════════════════════════════════════"
+        echo ""
+        echo "Join Token : a373a1c1d9cb7cc343d149402029dbb6"
+        echo ""

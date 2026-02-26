@@ -1,0 +1,9 @@
+# Fichiers générés lors du bootstrap
+.join-token
+.invite-url
+.cloud-init/
+# Certificats locaux (pré-existants dans ce repo)
+*.pem
+
+# Configs locales non versionnées
+.envrc.local

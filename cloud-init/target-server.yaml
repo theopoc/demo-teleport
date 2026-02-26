@@ -1,0 +1,150 @@
+#cloud-config
+# Target Server — Nginx + MySQL + Teleport Agent (immutable)
+# Variables à remplacer dans le Taskfile :
+#   {{BASTION_IP}}
+
+package_update: true
+package_upgrade: false
+
+
+packages:
+  - curl
+  - wget
+  - jq
+  - net-tools
+  - gnupg
+  - apt-transport-https
+  - nginx
+  - mysql-server
+
+write_files:
+  # Page d'accueil nginx
+  - path: /var/www/html/index.html
+    owner: www-data:www-data
+    permissions: '0644'
+    content: |
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Teleport Lab — Target Server</title>
+        <style>
+          body { font-family: sans-serif; margin: 40px; }
+          h1 { color: #0099ff; }
+          .status { background: #f0f0f0; padding: 15px; border-radius: 5px; }
+        </style>
+      </head>
+      <body>
+        <h1>🎯 Target Server</h1>
+        <p>Serveur cible du lab Teleport</p>
+        <div class="status">
+          <ul>
+            <li><strong>Nginx</strong> : running ✓</li>
+            <li><strong>MySQL</strong> : running ✓</li>
+            <li><strong>Teleport Agent</strong> : running ✓</li>
+          </ul>
+          <p><em>Accédé via Teleport SSH, App Service (nginx), ou DB Service (MySQL)</em></p>
+        </div>
+      </body>
+      </html>
+
+  # Configuration Teleport pour l'agent (node + app + db)
+  - path: /etc/teleport.yaml
+    permissions: '0644'
+    content: |
+      version: v3
+      teleport:
+        nodename: target-server
+        data_dir: /var/lib/teleport
+        auth_token: a373a1c1d9cb7cc343d149402029dbb6
+        proxy_server: ${BASTION_IP}:3080
+
+      ssh_service:
+        enabled: yes
+        labels:
+          role: target
+          env: lab
+
+      app_service:
+        enabled: yes
+        apps:
+          - name: nginx-app
+            description: "Nginx Web Server"
+            uri: http://localhost:80
+            labels:
+              env: lab
+              type: web
+
+      db_service:
+        enabled: yes
+        databases:
+          - name: mysql-lab
+            description: "MySQL Database"
+            protocol: mysql
+            uri: localhost:3306
+            labels:
+              env: lab
+              type: database
+            db_user: teleport_admin
+
+  # Script de configuration MySQL (créer users, CA, etc.)
+  - path: /opt/mysql-init.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -e
+
+      echo "[mysql-init] Configuration MySQL pour Teleport..."
+
+      # Attendre que MySQL soit prêt
+      until sudo mysqld_safe &>/dev/null || sudo systemctl is-active --quiet mysql; do
+        sleep 2
+      done
+      sleep 5
+
+      # Créer les utilisateurs MySQL
+      sudo mysql -u root -e "
+        CREATE USER IF NOT EXISTS 'alice'@'%' IDENTIFIED BY 'alice-password';
+        CREATE USER IF NOT EXISTS 'teleport_admin'@'%' REQUIRE X509;
+        GRANT ALL PRIVILEGES ON *.* TO 'alice'@'%' WITH GRANT OPTION;
+        GRANT ALL PRIVILEGES ON *.* TO 'teleport_admin'@'%' WITH GRANT OPTION;
+        CREATE DATABASE IF NOT EXISTS labdb;
+        USE labdb;
+        CREATE TABLE IF NOT EXISTS messages (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          message VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT IGNORE INTO messages (message) VALUES ('Bonjour depuis Teleport Lab !');
+        FLUSH PRIVILEGES;
+      "
+
+      echo "[mysql-init] MySQL configuré"
+
+runcmd:
+
+  - curl https://cdn.teleport.dev/install.sh | bash -s 18.7.1
+  # Démarrer les services
+  - systemctl enable nginx
+  - systemctl start nginx
+
+  - systemctl enable mysql
+  - systemctl start mysql
+
+  # Initialiser MySQL en arrière-plan
+  - bash /opt/mysql-init.sh &
+
+  # Démarrer Teleport agent
+  - systemctl enable teleport
+  - systemctl start teleport
+
+final_message: |
+  Target server opérationnel !
+
+  - Nginx : http://localhost:80
+  - MySQL : localhost:3306
+  - Teleport Agent : connecté à {{BASTION_IP}}:3080
+
+  Services :
+    • tsh ssh ubuntu@target-server       (SSH)
+    • tsh proxy app nginx-app --port=8080 (Web App)
+    • tsh db connect mysql-lab            (MySQL)

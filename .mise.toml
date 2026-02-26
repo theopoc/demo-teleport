@@ -1,0 +1,7 @@
+# Teleport Lab — Outils gérés par mise
+# Installer : mise install
+# (ou automatiquement via direnv si `use mise` est dans .envrc)
+
+[tools]
+jq   = "latest"
+task = "latest"   # Taskfile runner — https://taskfile.dev
