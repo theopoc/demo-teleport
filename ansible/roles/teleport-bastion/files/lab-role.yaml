@@ -1,0 +1,16 @@
+kind: role
+version: v7
+metadata:
+  name: lab-access
+spec:
+  allow:
+    logins: ['root']
+    node_labels:
+      '*': '*'
+    db_labels:
+      '*': '*'
+    db_names: ['*']
+    db_users: ['*']
+    app_labels:
+      '*': '*'
+  deny: {}

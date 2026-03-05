@@ -1,0 +1,85 @@
+---
+- name: Update and install base packages
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+    pkg:
+      - curl
+      - wget
+      - jq
+      - net-tools
+      - gnupg
+      - apt-transport-https
+
+- name: Create teleport directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /var/lib/teleport
+    - /etc/teleport
+
+- name: Copy Teleport bastion configuration
+  template:
+    src: teleport.yaml.j2
+    dest: /etc/teleport.yaml
+    mode: '0644'
+
+- name: Copy RBAC lab role definition
+  copy:
+    src: lab-role.yaml
+    dest: /etc/teleport/lab-role.yaml
+    mode: '0644'
+
+- name: Copy teleport initialization script
+  copy:
+    src: teleport-init.sh
+    dest: /opt/teleport-init.sh
+    mode: '0755'
+
+- name: Install Teleport
+  shell: curl https://cdn.teleport.dev/install.sh | bash -s 18.7.1
+  args:
+    creates: /usr/local/bin/teleport
+
+- name: Create systemd drop-in directory for Teleport
+  file:
+    path: /etc/systemd/system/teleport.service.d
+    state: directory
+    mode: '0755'
+
+- name: Add --insecure flag to Teleport service
+  copy:
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/local/bin/teleport start --config /etc/teleport.yaml --insecure
+    dest: /etc/systemd/system/teleport.service.d/insecure.conf
+    mode: '0644'
+
+- name: Enable and start Teleport service
+  systemd:
+    name: teleport
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Wait for Teleport to be ready
+  wait_for:
+    port: 3025
+    delay: 5
+    timeout: 60
+  register: teleport_ready
+
+- name: Run Teleport initialization script (async)
+  shell: /opt/teleport-init.sh
+  register: teleport_init_job
+
+- name: Wait for admin invite file to be created
+  wait_for:
+    path: /tmp/admin-invite.txt
+    state: present
+    delay: 2
+    timeout: 120
+  register: invite_file_ready

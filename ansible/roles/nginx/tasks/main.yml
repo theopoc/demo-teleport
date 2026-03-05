@@ -1,0 +1,19 @@
+---
+- name: Install Nginx
+  apt:
+    name: nginx
+    update_cache: yes
+
+- name: Copy Nginx index.html
+  copy:
+    src: index.html
+    dest: /var/www/html/index.html
+    owner: www-data
+    group: www-data
+    mode: '0644'
+
+- name: Enable and start Nginx
+  systemd:
+    name: nginx
+    enabled: yes
+    state: started

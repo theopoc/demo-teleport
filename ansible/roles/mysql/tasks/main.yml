@@ -1,0 +1,27 @@
+---
+- name: Install MySQL server
+  apt:
+    name: mysql-server
+    update_cache: yes
+
+- name: Enable MySQL service
+  systemd:
+    name: mysql
+    enabled: yes
+    state: started
+
+- name: Wait for MySQL to be ready
+  wait_for:
+    port: 3306
+    delay: 5
+    timeout: 60
+
+- name: Copy MySQL initialization script
+  copy:
+    src: mysql-init.sh
+    dest: /opt/mysql-init.sh
+    mode: '0755'
+
+- name: Run MySQL initialization script
+  shell: bash /opt/mysql-init.sh
+  changed_when: false

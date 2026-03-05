@@ -1,0 +1,44 @@
+version: v3
+teleport:
+  nodename: target-server
+  data_dir: /var/lib/teleport
+  join_params:
+    token_name: a373a1c1d9cb7cc343d149402029dbb6
+    method: token
+  auth_server: 192.168.56.10
+  log:
+    output: stderr
+    severity: INFO
+    format:
+      output: text
+  ca_pin: ""
+  diag_addr: ""
+ssh_service:
+  enabled: yes
+  labels:
+    role: target
+    env: lab
+
+#app_service:
+#  enabled: yes
+#  apps:
+#    - name: nginx-app
+#      description: "Nginx Web Server"
+#      uri: http://localhost:80
+#      labels:
+#        env: lab
+#        type: web
+#
+#db_service:
+#  enabled: yes
+#  databases:
+#    - name: mysql-lab
+#      description: "MySQL Database"
+#      protocol: mysql
+#      uri: localhost:3306
+#      static_labels:
+#        env: lab
+#        type: database
+#      admin_user:
+#        name: "teleport_admin"
+#        default_database: "labdb"

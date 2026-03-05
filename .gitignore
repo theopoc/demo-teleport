@@ -2,6 +2,14 @@
 .join-token
 .invite-url
 .cloud-init/
+
+# Vagrant
+.vagrant/
+*.vagrant
+.vscode/
+# Ansible inventaire dynamique
+ansible/inventory/dynamic.yml
+
 # Certificats locaux (pré-existants dans ce repo)
 *.pem
 

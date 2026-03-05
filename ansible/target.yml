@@ -1,0 +1,26 @@
+---
+- name: Deploy Target Server (Nginx + MySQL + Teleport Agent)
+  hosts: target-server
+  become: yes
+  gather_facts: yes
+
+  pre_tasks:
+    - name: Get bastion IP from inventory
+      set_fact:
+        bastion_ip: "{{ hostvars.bastion_ip | default('10.0.2.15') }}"
+
+  roles:
+    - nginx
+    - mysql
+    - teleport-agent
+
+  post_tasks:
+    - name: Display target information
+      debug:
+        msg: |
+          ✓ Target Server deployed successfully
+          IP: {{ ansible_default_ipv4.address }}
+          Services:
+            • Nginx: http://{{ ansible_default_ipv4.address }}:80
+            • MySQL: {{ ansible_default_ipv4.address }}:3306
+            • Teleport Agent: connected to bastion

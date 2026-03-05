@@ -1,0 +1,22 @@
+---
+- name: Deploy Teleport Bastion
+  hosts: teleport-bastion
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Set bastion_ip fact from eth1 interface
+      set_fact:
+        bastion_ip: "{{ ansible_facts['eth1']['ipv4']['address'] }}"
+
+  roles:
+    - teleport-bastion
+
+  post_tasks:
+    - name: Display bastion information
+      debug:
+        msg: |
+          ✓ Teleport Bastion deployed successfully
+          IP: {{ bastion_ip }}
+          Web UI: https://{{ bastion_ip }}:3080
+          (Check /tmp/admin-invite.txt for admin credentials)

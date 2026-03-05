@@ -1,0 +1,27 @@
+version: v3
+teleport:
+  nodename: teleport-bastion
+  data_dir: /var/lib/teleport
+  log:
+    output: stderr
+    severity: INFO
+
+auth_service:
+  enabled: yes
+  listen_addr: 0.0.0.0:3025
+  cluster_name: teleport-lab
+  tokens:
+    - "node,proxy,db,app:a373a1c1d9cb7cc343d149402029dbb6"
+
+proxy_service:
+  enabled: yes
+  listen_addr: 0.0.0.0:3023
+  web_listen_addr: 0.0.0.0:3080
+  tunnel_listen_addr: 0.0.0.0:3024
+  public_addr: "{{ bastion_ip | default('localhost:3080') }}:3080"
+
+ssh_service:
+  enabled: yes
+  labels:
+    role: bastion
+    env: lab
