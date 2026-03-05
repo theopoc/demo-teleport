@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teleport — Architecture Réseau</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0b0f1a;
+    --grid-color: rgba(255,255,255,0.025);
+    --surface: #111827;
+    --border: #1f2d45;
+
+    --blue: #38bdf8;
+    --blue-dim: rgba(56,189,248,0.12);
+    --blue-border: rgba(56,189,248,0.3);
+
+    --purple: #a78bfa;
+    --purple-dim: rgba(167,139,250,0.1);
+    --purple-border: rgba(167,139,250,0.3);
+
+    --green: #34d399;
+    --green-dim: rgba(52,211,153,0.1);
+    --green-border: rgba(52,211,153,0.3);
+
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.1);
+    --amber-border: rgba(251,191,36,0.3);
+
+    --cyan: #06b6d4;
+    --cyan-dim: rgba(6,182,212,0.1);
+    --cyan-border: rgba(6,182,212,0.3);
+
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    background-image:
+      linear-gradient(var(--grid-color) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+    background-size: 32px 32px;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: var(--text);
+    padding: 48px 32px;
+    min-width: 860px;
+  }
+
+  .header { text-align: center; margin-bottom: 48px; }
+  .header-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.2em;
+    color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px;
+  }
+  .header-title { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+  .header-title span { color: var(--purple); }
+
+  .layout { max-width: 920px; margin: 0 auto; }
+
+  /* ── Zones ── */
+  .zone {
+    border: 1px dashed; border-radius: 16px;
+    padding: 20px 24px 24px; position: relative;
+  }
+  .zone-label {
+    position: absolute; top: -11px; left: 20px;
+    background: var(--bg); padding: 0 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+
+  .zone-host   { border-color: rgba(56,189,248,0.2);  background: rgba(56,189,248,0.02); }
+  .zone-host .zone-label { color: var(--blue); }
+
+  .zone-vagrant { border-color: rgba(251,191,36,0.3); background: rgba(251,191,36,0.02); margin-top: 16px; }
+  .zone-vagrant .zone-label { color: var(--amber); }
+
+  .zone-bastion {
+    border: 1px dashed var(--purple-border);
+    background: var(--purple-dim); border-radius: 12px;
+    padding: 16px 20px 20px; position: relative;
+    margin-bottom: 16px;
+  }
+  .zone-bastion .zone-label { color: var(--purple); font-size: 9px; }
+
+  .zone-target {
+    border: 1px dashed var(--cyan-border);
+    background: var(--cyan-dim); border-radius: 12px;
+    padding: 16px 20px 20px; position: relative;
+  }
+  .zone-target .zone-label { color: var(--cyan); font-size: 9px; }
+
+  /* ── Composants ── */
+  .comp { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .comp-box {
+    border-radius: 10px; padding: 12px 16px;
+    text-align: center; min-width: 120px;
+  }
+  .comp-icon  { font-size: 20px; margin-bottom: 4px; display: block; }
+  .comp-name  { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; display: block; margin-bottom: 2px; }
+  .comp-desc  { font-size: 10px; opacity: 0.65; display: block; }
+
+  .c-blue   { background: var(--blue-dim);   border: 1px solid var(--blue-border);   color: var(--blue); }
+  .c-purple { background: var(--purple-dim); border: 1px solid var(--purple-border); color: var(--purple); }
+  .c-green  { background: var(--green-dim);  border: 1px solid var(--green-border);  color: var(--green); }
+  .c-amber  { background: var(--amber-dim);  border: 1px solid var(--amber-border);  color: var(--amber); }
+  .c-cyan   { background: var(--cyan-dim);   border: 1px solid var(--cyan-border);   color: var(--cyan); }
+
+  /* ── Port tags ── */
+  .port-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    padding: 2px 6px; border-radius: 4px; font-weight: 600; white-space: nowrap;
+  }
+  .pt-blue   { background: rgba(56,189,248,0.15);  color: var(--blue);   border: 1px solid var(--blue-border); }
+  .pt-purple { background: rgba(167,139,250,0.15); color: var(--purple); border: 1px solid var(--purple-border); }
+  .pt-green  { background: rgba(52,211,153,0.15);  color: var(--green);  border: 1px solid var(--green-border); }
+  .pt-amber  { background: rgba(251,191,36,0.15);  color: var(--amber);  border: 1px solid var(--amber-border); }
+  .pt-cyan   { background: rgba(6,182,212,0.15);   color: var(--cyan);   border: 1px solid var(--cyan-border); }
+
+  /* ── Notes ── */
+  .note {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 5px 12px; border-radius: 20px; width: fit-content; margin: 8px auto 0;
+  }
+  .note-amber { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25); color: var(--amber); }
+  .note-green { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.25); color: var(--green); }
+  .note-blue  { background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.25); color: var(--blue); }
+  .note-cyan  { background: rgba(6,182,212,0.08);  border: 1px solid rgba(6,182,212,0.25);  color: var(--cyan); }
+
+  .tunnel-note { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--green); opacity: 0.7; text-align: center; }
+
+  /* ── Rows ── */
+  .row        { display: flex; align-items: center; justify-content: center; gap: 0; }
+  .row-spaced { display: flex; align-items: flex-start; justify-content: center; gap: 20px; flex-wrap: wrap; }
+  .row-col    { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+
+  /* ── Flèche horizontale ── */
+  .arrow-h { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0 4px; padding-top: 24px; flex-shrink: 0; }
+  .arrow-line-h { height: 2px; border-radius: 1px; position: relative; }
+
+  .bidirectional::after  { content:''; position:absolute; right:-1px; top:-4px; border:5px solid transparent; }
+  .bidirectional::before { content:''; position:absolute; left:-1px;  top:-4px; border:5px solid transparent; }
+
+  .a-purple { background: rgba(167,139,250,0.5); }
+  .a-purple.bidirectional::after  { border-left-color:  rgba(167,139,250,0.8); }
+  .a-purple.bidirectional::before { border-right-color: rgba(167,139,250,0.8); }
+
+  .a-green { background: rgba(52,211,153,0.5); }
+  .a-green.bidirectional::after  { border-left-color:  rgba(52,211,153,0.8); }
+  .a-green.bidirectional::before { border-right-color: rgba(52,211,153,0.8); }
+
+  .arrow-meta { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted); white-space: nowrap; text-align: center; line-height: 1.5; }
+
+  /* ── Flèches verticales ── */
+  .av { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .av-line     { width: 2px; border-radius: 1px; }
+  .av-tip-down { width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; }
+  .av-tip-up   { width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; }
+
+  .blue-line  { background: rgba(56,189,248,0.5);  }
+  .blue-down  { border-top: 7px solid rgba(56,189,248,0.7); }
+  .blue-up    { border-bottom: 7px solid rgba(56,189,248,0.7); }
+
+  .green-line { background: rgba(52,211,153,0.5);  }
+  .green-down { border-top: 7px solid rgba(52,211,153,0.7); }
+  .green-up   { border-bottom: 7px solid rgba(52,211,153,0.7); }
+
+  .av-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted); text-align: center; line-height: 1.5; white-space: nowrap; }
+
+  /* ── Légende ── */
+  .legend {
+    max-width: 920px; margin: 24px auto 0;
+    display: flex; flex-wrap: wrap; gap: 8px 20px;
+    padding: 14px 18px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .legend-title { width:100%; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:2px; }
+  .legend-item  { display:flex; align-items:center; gap:8px; font-size:12px; color:#94a3b8; }
+  .legend-line  { width:24px; height:2px; border-radius:1px; flex-shrink:0; }
+  .legend-dot   { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+
+  /* ── Stacked services ── */
+  .services-stack { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .service-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 8px 12px; border-radius: 8px;
+    font-size: 11px; min-width: 100px;
+  }
+  .service-item.nginx   { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.2); color: var(--green); }
+  .service-item.mysql   { background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2); color: var(--cyan); }
+  .service-item.teleport { background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.2); color: var(--purple); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-eyebrow">Architecture réseau — POC local</div>
+  <div class="header-title">Teleport <span>Zero-Trust SSH</span> via Vagrant</div>
+</div>
+
+<div class="layout">
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- ZONE HOST                               -->
+  <!-- ═══════════════════════════════════════ -->
+  <div class="zone zone-host">
+    <div class="zone-label">🖥️ Machine hôte (poste local)</div>
+
+    <div style="display:flex; justify-content:center; margin-bottom:16px;">
+      <div class="comp">
+        <div class="comp-box c-blue" style="min-width:160px;">
+          <span class="comp-icon">👤</span>
+          <span class="comp-name">Opérateur</span>
+          <span class="comp-desc">tsh · tctl · browser</span>
+        </div>
+        <div class="note note-blue">Interface host-only — 192.168.56.1</div>
+      </div>
+    </div>
+
+    <!-- Flèche vers bastion -->
+    <div style="display:flex; justify-content:center; margin:0;">
+      <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+        <div class="av-label">HTTPS / WSS</div>
+        <div class="av">
+          <div class="av-line blue-line" style="height:28px;"></div>
+          <div class="av-tip-down blue-down"></div>
+        </div>
+        <div style="display:flex; gap:4px;">
+          <span class="port-tag pt-blue">:443</span>
+          <span class="port-tag pt-blue">:3080</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════ -->
+    <!-- ZONE VAGRANT                            -->
+    <!-- ═══════════════════════════════════════ -->
+    <div class="zone zone-vagrant">
+      <div class="zone-label">📦 Réseau Vagrant — host-only (192.168.56.0/24)</div>
+
+      <!-- BASTION -->
+      <div class="zone-bastion">
+        <div class="zone-label">VM Bastion — teleport-bastion (192.168.56.10)</div>
+
+        <div class="row">
+          <div class="comp">
+            <div class="comp-box c-purple" style="min-width:130px;">
+              <span class="comp-icon">🔀</span>
+              <span class="comp-name">Proxy Service</span>
+              <span class="comp-desc">point d'entrée</span>
+            </div>
+            <div style="display:flex; gap:4px; margin-top:4px;">
+              <span class="port-tag pt-purple">:443</span>
+              <span class="port-tag pt-purple">:3080</span>
+            </div>
+          </div>
+
+          <div class="arrow-h" style="width:80px;">
+            <div class="arrow-line-h bidirectional a-purple" style="width:72px;"></div>
+            <div class="arrow-meta">gRPC<br><span class="port-tag pt-amber">:3025</span></div>
+          </div>
+
+          <div class="comp">
+            <div class="comp-box c-amber" style="min-width:130px;">
+              <span class="comp-icon">🔐</span>
+              <span class="comp-name">Auth Service</span>
+              <span class="comp-desc">CA · RBAC · audit</span>
+            </div>
+            <div style="display:flex; gap:4px; margin-top:4px;">
+              <span class="port-tag pt-amber">:3025 interne</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flèche bastion ↔ target -->
+      <div style="display:flex; justify-content:center; gap:20px; margin: 6px 0; padding: 0;">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+          <div class="av-label" style="color:rgba(52,211,153,0.75);">reverse tunnel</div>
+          <div class="av">
+            <div class="av-tip-up green-up"></div>
+            <div class="av-line green-line" style="height:22px;"></div>
+            <div class="av-tip-down green-down"></div>
+          </div>
+          <div class="av-label" style="color:rgba(52,211,153,0.5);">SSH over WSS</div>
+        </div>
+      </div>
+
+      <!-- TARGET -->
+      <div class="zone-target">
+        <div class="zone-label">VM Target — target-server (192.168.56.11)</div>
+
+        <div class="services-stack">
+          <div class="service-item teleport">
+            <span style="font-weight:600;">🔗 Teleport Agent</span>
+            <span style="font-size:9px; opacity:0.7;">ssh_service · app_service · db_service</span>
+          </div>
+
+          <div style="width:100%; border-top: 1px dashed rgba(255,255,255,0.1); padding: 6px 0;"></div>
+
+          <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+            <div class="service-item nginx">
+              <span style="font-weight:600;">🌐 Nginx</span>
+              <span style="font-size:9px;">port 80</span>
+              <span class="port-tag pt-green">:80</span>
+            </div>
+
+            <div class="service-item mysql">
+              <span style="font-weight:600;">🗄️ MySQL</span>
+              <span style="font-size:9px;">labdb · users</span>
+              <span class="port-tag pt-cyan">:3306</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="note note-cyan" style="margin-top:12px;">
+          ✅ Agent expose services via Proxy — aucun port externe
+        </div>
+      </div><!-- /zone-target -->
+
+    </div><!-- /zone-vagrant -->
+
+  </div><!-- /zone-host -->
+
+</div><!-- /layout -->
+
+<!-- Légende -->
+<div class="legend">
+  <div class="legend-title">Légende</div>
+  <div class="legend-item">
+    <div class="legend-line" style="background:rgba(56,189,248,0.6);"></div>
+    Opérateur → Proxy (HTTPS/WSS :443)
+  </div>
+  <div class="legend-item">
+    <div class="legend-line" style="background:rgba(167,139,250,0.6);"></div>
+    Proxy ↔ Auth Service (gRPC interne :3025)
+  </div>
+  <div class="legend-item">
+    <div class="legend-line" style="background:rgba(52,211,153,0.6);"></div>
+    Reverse tunnel Agent → Proxy (SSH over WSS)
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:rgba(251,191,36,0.1); border:1px dashed rgba(251,191,36,0.3);"></div>
+    Réseau Vagrant host-only (192.168.56.0/24)
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--purple-dim); border:1px solid var(--purple-border);"></div>
+    VM Bastion — Proxy + Auth Service
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--cyan-dim); border:1px solid var(--cyan-border);"></div>
+    VM Target — Agent + Services (Nginx, MySQL)
+  </div>
+</div>
+
+</body>
+</html>

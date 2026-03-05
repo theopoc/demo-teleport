@@ -2,7 +2,7 @@
 .join-token
 .invite-url
 .cloud-init/
-
+.venv/
 # Vagrant
 .vagrant/
 *.vagrant

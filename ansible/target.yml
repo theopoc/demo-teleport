@@ -6,6 +6,7 @@
   vars:
     teleport_mode: agent
     teleport_nodename: target-server
+    teleport_db_service_enabled: true
 
   pre_tasks:
     - name: Ensure bastion_ip is set from group_vars
@@ -17,13 +18,3 @@
     - mysql
     - teleport
 
-  post_tasks:
-    - name: Display target information
-      debug:
-        msg: |
-          ✓ Target Server deployed successfully
-          IP: {{ ansible_default_ipv4.address }}
-          Services:
-            • Nginx: http://{{ ansible_default_ipv4.address }}:80
-            • MySQL: {{ ansible_default_ipv4.address }}:3306
-            • Teleport Agent: connected to bastion
