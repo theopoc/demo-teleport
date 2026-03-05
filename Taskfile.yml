@@ -1,133 +1,192 @@
 version: '3'
 
 # =============================================================================
-# Variables — surchargables via .envrc
+# Global Configuration
 # =============================================================================
 vars:
+  # Infrastructure sizing (override via .envrc or CLI: task setup -- --set VM_CPUS 4)
   VM_CPUS:  '{{.VM_CPUS  | default "2"}}'
   VM_MEM:   '{{.VM_MEM   | default "2048"}}'
-
+  # Internal constants
+  BASTION_VM: "teleport-bastion"
+  TARGET_VM: "target-server"
+  VAGRANT_DIR: ".vagrant"
 
 # =============================================================================
-# Tâches
+# Task Definitions
 # =============================================================================
 tasks:
 
+  # =========================================================================
+  # Main Workflows
+  # =========================================================================
+
   default:
-    desc: Lister les tâches disponibles
+    desc: List available tasks
     silent: true
     cmds:
       - task --list
 
-  # ---------------------------------------------------------------------------
   setup:
-    desc: "🚀 Bootstrap complet du lab Teleport (Vagrant + Ansible)"
+    desc: "🚀 Bootstrap complete Teleport lab (Vagrant + Ansible provisioning)"
+    summary: |
+      Creates 2 Ubuntu 24.04 VMs with Teleport:
+      - teleport-bastion: Auth/Proxy server (192.168.56.10)
+      - target-server: Nginx + MySQL + Agent (192.168.56.11)
+    deps:
+      - check-deps
     cmds:
-      - task: _check-deps
-      - task: _vagrant-up
-      - task: _summary
+      - task: vagrant-up
+      - task: summary
 
-  # ---------------------------------------------------------------------------
   destroy:
-    desc: "🗑️  Supprimer les VMs du lab"
-    prompt: "Supprimer toutes les VMs Vagrant ?"
+    desc: "🗑️  Remove all lab VMs and state"
+    summary: Permanently deletes VMs, snapshots, and .vagrant directory
+    prompt: "🔥 Destroy all VMs and remove .vagrant directory?"
     cmds:
       - vagrant destroy -f
-      - rm -rf .vagrant
-      - echo "✓ Lab supprimé"
+      - rm -rf {{.VAGRANT_DIR}}
+      - echo "✓ Lab destroyed"
 
-  # ---------------------------------------------------------------------------
+  # =========================================================================
+  # Status & Monitoring
+  # =========================================================================
+
   status:
-    desc: "📊 État des VMs"
+    desc: "📊 Show Vagrant VM status"
     silent: true
     cmds:
       - vagrant status
 
-  # ---------------------------------------------------------------------------
+  health:
+    desc: "🏥 Health check - verify both Teleport services are running"
+    preconditions:
+      - sh: test -d {{.VAGRANT_DIR}}
+        msg: "VMs not found. Run 'task setup' first."
+    cmds:
+      - |
+        echo "Checking Teleport services..."
+        echo ""
+        echo "Bastion ({{.BASTION_VM}}):"
+        vagrant ssh {{.BASTION_VM}} -- sudo systemctl is-active teleport > /dev/null && echo "  ✓ Active" || echo "  ✗ Inactive"
+        echo ""
+        echo "Target ({{.TARGET_VM}}):"
+        vagrant ssh {{.TARGET_VM}} -- sudo systemctl is-active teleport > /dev/null && echo "  ✓ Active" || echo "  ✗ Inactive"
+
+  # =========================================================================
+  # Logs & Diagnostics
+  # =========================================================================
 
   logs:bastion:
-    desc: "📋 Logs Teleport du bastion (live)"
+    desc: "📋 Stream Teleport logs from bastion (live, Ctrl+C to stop)"
+    preconditions:
+      - sh: vagrant status {{.BASTION_VM}} | grep -q running
+        msg: "Bastion VM is not running. Run 'task setup' first."
     cmds:
-      - vagrant ssh teleport-bastion -- sudo journalctl -u teleport -f --no-pager
+      - vagrant ssh {{.BASTION_VM}} -- sudo journalctl -u teleport -f --no-pager
 
   logs:target:
-    desc: "📋 Logs Teleport du target (live)"
+    desc: "📋 Stream Teleport logs from target (live, Ctrl+C to stop)"
+    preconditions:
+      - sh: vagrant status {{.TARGET_VM}} | grep -q running
+        msg: "Target VM is not running. Run 'task setup' first."
     cmds:
-      - vagrant ssh target-server -- sudo journalctl -u teleport -f --no-pager
+      - vagrant ssh {{.TARGET_VM}} -- sudo journalctl -u teleport -f --no-pager
 
   display-admin-invite:bastion:
-    desc: "Afficher le fichier d'invitation admin du bastion"
-    cmds:
-      - vagrant ssh teleport-bastion -- cat /tmp/admin-invite.txt 2>/dev/null || echo "(pas encore créé)"
-
-  # ---------------------------------------------------------------------------
-  # Tâches internes
-  # ---------------------------------------------------------------------------
-
-  _check-deps:
-    internal: true
+    desc: "🔑 Display admin invitation link from bastion"
     preconditions:
-      - sh: command -v vagrant
-        msg: |
-          vagrant n'est pas installé.
-          → https://www.vagrantup.com
-      - sh: command -v ansible-playbook
-        msg: |
-          ansible n'est pas installé.
-          → apt install ansible   ou   pip install ansible
+      - sh: vagrant status {{.BASTION_VM}} | grep -q running
+        msg: "Bastion VM is not running."
     cmds:
-      - echo "✓ Dépendances OK (Vagrant + Ansible)"
+      - vagrant ssh {{.BASTION_VM}} -- cat /tmp/admin-invite.txt 2>/dev/null || echo "(invitation file not yet created - wait for provisioning)"
 
-  _vagrant-up:
+  # =========================================================================
+  # Internal/Helper Tasks
+  # =========================================================================
+
+  check-deps:
     internal: true
-    silent: true
+    desc: Validate required system dependencies
+    preconditions:
+      - sh: command -v vagrant > /dev/null 2>&1
+        msg: |
+          ❌ Vagrant not found in PATH.
+
+          Install from: https://www.vagrantup.com/downloads
+          Or via package manager:
+            macOS: brew install vagrant
+            Ubuntu: sudo apt install vagrant
+      - sh: command -v ansible-playbook > /dev/null 2>&1
+        msg: |
+          ❌ Ansible not found in PATH.
+
+          Install via:
+            Ubuntu: sudo apt install ansible
+            macOS: brew install ansible
+            pip: pip install --user ansible
+      - sh: command -v vagrant plugin list | grep -q vagrant-vbguest
+        msg: |
+          ⚠️  Optional: vagrant-vbguest plugin improves VM stability.
+          Install via: vagrant plugin install vagrant-vbguest
+    cmds:
+      - echo "✓ All required dependencies found"
+
+  vagrant-up:
+    internal: true
+    desc: Bring up VMs and run Ansible provisioning
+    status:
+      - test -d {{.VAGRANT_DIR}}/machines/{{.BASTION_VM}}/virtualbox
+      - test -d {{.VAGRANT_DIR}}/machines/{{.TARGET_VM}}/virtualbox
     cmds:
       - VM_CPUS={{.VM_CPUS}} VM_MEM=4096 vagrant up
 
-  _summary:
-    #internal: true
-    silent: true
+  summary:
+    internal: true
+    desc: Display deployment summary and access instructions
+    deps:
+      - vagrant-up
     vars:
       BASTION_IP:
-        sh: vagrant ssh teleport-bastion -c "hostname -I | awk '{print \$2}'" | tr -d '\r'
+        sh: vagrant ssh {{.BASTION_VM}} -c "hostname -I | awk '{print \\$2}'" 2>/dev/null | tr -d '\r'
       TARGET_IP:
-        sh: vagrant ssh target-server -c "hostname -I | awk '{print \$2}'" | tr -d '\r'
+        sh: vagrant ssh {{.TARGET_VM}} -c "hostname -I | awk '{print \\$2}'" 2>/dev/null | tr -d '\r'
     cmds:
       - |
         echo ""
         echo "╔══════════════════════════════════════════════════════════════════╗"
-        echo "║               TELEPORT LAB — DÉPLOYÉ                            ║"
+        echo "║           ✓ TELEPORT LAB DEPLOYED SUCCESSFULLY                  ║"
         echo "╚══════════════════════════════════════════════════════════════════╝"
         echo ""
-        printf "  %-22s %s  (IP: %s)\n" "Bastion :" "teleport-bastion" "{{.BASTION_IP}}"
-        printf "  %-22s %s  (IP: %s)\n" "Target :"  "target-server"  "{{.TARGET_IP}}"
+        printf "  %-22s %s%24s IP: %s\\n" "Bastion:" "{{.BASTION_VM}}" "" "{{.BASTION_IP}}"
+        printf "  %-22s %s%24s IP: %s\\n" "Target:" "{{.TARGET_VM}}" "" "{{.TARGET_IP}}"
         echo ""
-        echo "  ── INTERFACE WEB (Teleport) ────────────────────────────────────"
-        echo "  https://{{.BASTION_IP}}:3080"
-        echo "  (accepter le certificat auto-signé)"
-        echo ""
-        echo "  ── RÉCUPÉRER LE LIEN ADMIN ────────────────────────────────────"
+        echo "  ┌─ WEB UI (HTTPS) ──────────────────────────────────────────────"
+        echo "  │  https://{{.BASTION_IP}}:3080"
+        echo "  │  (⚠️  Self-signed cert - accept in browser)"
+        echo "  │"
+        echo "  ├─ ADMIN INVITE LINK ────────────────────────────────────────────"
       - task: display-admin-invite:bastion
-        silent: true
       - |
-        echo ""
-        echo "  ── CONNEXION TSH ──────────────────────────────────────────────"
-        echo "  tsh login --proxy={{.BASTION_IP}}:3080 --insecure --user=teleport-admin"
-        echo ""
-        echo "  ── ACCÈS SSH ──────────────────────────────────────────────────"
-        echo "  tsh ls                     # Lister les nodes"
-        echo "  tsh ssh ubuntu@target-server"
-        echo ""
-        echo "  ── ACCÈS APP (nginx) ──────────────────────────────────────────"
-        echo "  tsh apps ls"
-        echo "  tsh apps login nginx-app"
-        echo "  tsh proxy app nginx-app --port=8080"
-        echo "  # Puis : open http://localhost:8080"
-        echo ""
-        echo "  ── ACCÈS DB (MySQL) ────────────────────────────────────────────"
-        echo "  tsh db ls"
-        echo "  tsh db login mysql-lab --db-user=alice"
-        echo "  tsh db connect mysql-lab"
-        echo ""
-        echo "Join Token : a373a1c1d9cb7cc343d149402029dbb6"
+        echo "  │"
+        echo "  ├─ CLI LOGIN ────────────────────────────────────────────────────"
+        echo "  │  tsh login --proxy={{.BASTION_IP}}:3080 --insecure --user=teleport-admin"
+        echo "  │"
+        echo "  ├─ SSH ACCESS ───────────────────────────────────────────────────"
+        echo "  │  tsh ls                              # List nodes"
+        echo "  │  tsh ssh ubuntu@{{.TARGET_VM}}"
+        echo "  │"
+        echo "  ├─ APP ACCESS (Nginx) ──────────────────────────────────────────"
+        echo "  │  tsh apps ls"
+        echo "  │  tsh apps login nginx-app"
+        echo "  │  tsh proxy app nginx-app --port=8080"
+        echo "  │  open http://localhost:8080"
+        echo "  │"
+        echo "  ├─ DATABASE ACCESS (MySQL) ─────────────────────────────────────"
+        echo "  │  tsh db ls"
+        echo "  │  tsh db login mysql-lab --db-user=alice"
+        echo "  │  tsh db connect mysql-lab"
+        echo "  │"
+        echo "  └─ JOIN TOKEN ──────────────────────────────────────────────────"
+        echo "     a373a1c1d9cb7cc343d149402029dbb6"
         echo ""
