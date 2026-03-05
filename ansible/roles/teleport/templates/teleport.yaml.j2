@@ -6,7 +6,7 @@ teleport:
   join_params:
     token_name: "{{ teleport_join_token }}"
     method: token
-  auth_server: "{{ bastion_ip }}"
+  proxy_server: "{{ bastion_ip }}:3080"
 {% endif %}
   log:
     output: stderr
@@ -26,6 +26,12 @@ proxy_service:
   web_listen_addr: 0.0.0.0:3080
   tunnel_listen_addr: 0.0.0.0:3024
   public_addr: "{{ bastion_ip }}:3080"
+{% else %}
+auth_service:
+  enabled: false
+
+proxy_service:
+  enabled: false
 {% endif %}
 
 ssh_service:
