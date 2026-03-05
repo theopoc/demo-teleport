@@ -167,6 +167,7 @@ tasks:
         echo "  │"
         echo "  ├─ ADMIN INVITE LINK ────────────────────────────────────────────"
       - task: display-admin-invite:bastion
+        silent: true
       - |
         echo "  │"
         echo "  ├─ CLI LOGIN ────────────────────────────────────────────────────"
