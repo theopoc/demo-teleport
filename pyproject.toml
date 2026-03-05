@@ -1,0 +1,8 @@
+[project]
+name = "demo-teleport"
+version = "0.1.0"
+description = "Infrastructure-as-code lab for Teleport zero-trust SSH access"
+requires-python = ">=3.11"
+dependencies = [
+    "ansible>=2.14.0",
+]

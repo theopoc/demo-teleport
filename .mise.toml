@@ -5,3 +5,4 @@
 [tools]
 jq   = "latest"
 task = "latest"   # Taskfile runner — https://taskfile.dev
+uv   = "latest"   # Python package manager — https://docs.astral.sh/uv/
