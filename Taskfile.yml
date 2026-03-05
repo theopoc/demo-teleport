@@ -174,7 +174,7 @@ tasks:
         echo "  │"
         echo "  ├─ SSH ACCESS ───────────────────────────────────────────────────"
         echo "  │  tsh ls                              # List nodes"
-        echo "  │  tsh ssh ubuntu@{{.TARGET_VM}}"
+        echo "  │  tsh ssh root@{{.TARGET_VM}}"
         echo "  │"
         echo "  ├─ APP ACCESS (Nginx) ──────────────────────────────────────────"
         echo "  │  tsh apps ls"
