@@ -142,15 +142,15 @@ tasks:
       - VM_CPUS={{.VM_CPUS}} VM_MEM=4096 vagrant up
 
   summary:
-    internal: true
     desc: Display deployment summary and access instructions
+    silent: true
     deps:
       - vagrant-up
     vars:
       BASTION_IP:
-        sh: vagrant ssh {{.BASTION_VM}} -c "hostname -I | awk '{print \\$2}'" 2>/dev/null | tr -d '\r'
+        sh: vagrant ssh {{.BASTION_VM}} -- ip -4 addr show eth1 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1 || echo '192.168.56.10'
       TARGET_IP:
-        sh: vagrant ssh {{.TARGET_VM}} -c "hostname -I | awk '{print \\$2}'" 2>/dev/null | tr -d '\r'
+        sh: vagrant ssh {{.TARGET_VM}} -- ip -4 addr show eth1 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1 || echo '192.168.56.11'
     cmds:
       - |
         echo ""
