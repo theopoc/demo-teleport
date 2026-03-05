@@ -1,0 +1,59 @@
+version: v3
+teleport:
+  nodename: "{{ teleport_nodename }}"
+  data_dir: /var/lib/teleport
+{% if teleport_mode == "agent" %}
+  join_params:
+    token_name: "{{ teleport_join_token }}"
+    method: token
+  auth_server: "{{ bastion_ip }}"
+{% endif %}
+  log:
+    output: stderr
+    severity: INFO
+
+{% if teleport_mode == "bastion" %}
+auth_service:
+  enabled: yes
+  listen_addr: 0.0.0.0:3025
+  cluster_name: teleport-lab
+  tokens:
+    - "node,proxy,db,app:{{ teleport_join_token }}"
+
+proxy_service:
+  enabled: yes
+  listen_addr: 0.0.0.0:3023
+  web_listen_addr: 0.0.0.0:3080
+  tunnel_listen_addr: 0.0.0.0:3024
+  public_addr: "{{ bastion_ip }}:3080"
+{% endif %}
+
+ssh_service:
+  enabled: yes
+  labels:
+    role: "{{ teleport_nodename }}"
+    env: lab
+
+{% if teleport_mode == "agent" and teleport_app_service_enabled | default(false) %}
+app_service:
+  enabled: yes
+  apps:
+    - name: nginx-app
+      uri: http://localhost:80
+      labels:
+        env: lab
+{% endif %}
+
+{% if teleport_mode == "agent" and teleport_db_service_enabled | default(false) %}
+db_service:
+  enabled: yes
+  databases:
+    - name: mysql-lab
+      protocol: mysql
+      uri: localhost:3306
+      static_labels:
+        env: lab
+      admin_user:
+        name: teleport_admin
+        default_database: labdb
+{% endif %}

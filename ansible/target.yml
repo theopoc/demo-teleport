@@ -3,16 +3,19 @@
   hosts: target-server
   become: yes
   gather_facts: yes
+  vars:
+    teleport_mode: agent
+    teleport_nodename: target-server
 
   pre_tasks:
-    - name: Get bastion IP from inventory
-      set_fact:
-        bastion_ip: "{{ hostvars.bastion_ip | default('10.0.2.15') }}"
+    - name: Ensure bastion_ip is set from group_vars
+      debug:
+        msg: "Using bastion_ip from group_vars: {{ bastion_ip }}"
 
   roles:
     - nginx
     - mysql
-    - teleport-agent
+    - teleport
 
   post_tasks:
     - name: Display target information

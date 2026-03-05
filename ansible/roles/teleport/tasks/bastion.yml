@@ -1,0 +1,28 @@
+---
+- name: Copy RBAC lab role definition
+  copy:
+    src: lab-role.yaml
+    dest: /etc/teleport/lab-role.yaml
+    mode: '0644'
+
+- name: Copy teleport initialization script
+  copy:
+    src: teleport-init.sh
+    dest: /opt/teleport-init.sh
+    mode: '0755'
+
+- name: Wait for Teleport auth service to be ready
+  wait_for:
+    port: 3025
+    delay: 5
+    timeout: 60
+
+- name: Run Teleport initialization script
+  shell: /opt/teleport-init.sh
+
+- name: Wait for admin invite file to be created
+  wait_for:
+    path: /tmp/admin-invite.txt
+    state: present
+    delay: 2
+    timeout: 120

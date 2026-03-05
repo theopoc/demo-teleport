@@ -1,0 +1,5 @@
+---
+# Agent-specific tasks (currently all configuration is in the unified template)
+- name: Agent configuration complete
+  debug:
+    msg: "Teleport agent configured via unified template"

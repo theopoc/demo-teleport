@@ -1,0 +1,4 @@
+---
+teleport_version: "18.7.1"
+teleport_join_token: "a373a1c1d9cb7cc343d149402029dbb6"
+bastion_ip: "192.168.56.10"

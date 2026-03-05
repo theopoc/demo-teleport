@@ -3,6 +3,9 @@
   hosts: teleport-bastion
   become: true
   gather_facts: true
+  vars:
+    teleport_mode: bastion
+    teleport_nodename: teleport-bastion
 
   pre_tasks:
     - name: Set bastion_ip fact from eth1 interface
@@ -10,7 +13,7 @@
         bastion_ip: "{{ ansible_facts['eth1']['ipv4']['address'] }}"
 
   roles:
-    - teleport-bastion
+    - teleport
 
   post_tasks:
     - name: Display bastion information

@@ -18,15 +18,16 @@
     mode: '0755'
   loop:
     - /var/lib/teleport
+    - /etc/teleport
 
-- name: Copy Teleport agent configuration
+- name: Copy Teleport configuration
   template:
-    src: teleport-agent.yaml.j2
+    src: teleport.yaml.j2
     dest: /etc/teleport.yaml
     mode: '0644'
 
 - name: Install Teleport
-  shell: curl https://cdn.teleport.dev/install.sh | bash -s 18.7.1
+  shell: curl https://cdn.teleport.dev/install.sh | bash -s {{ teleport_version }}
   args:
     creates: /usr/local/bin/teleport
 
