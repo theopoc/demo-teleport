@@ -47,6 +47,7 @@ app_service:
   apps:
     - name: nginx-app
       uri: http://localhost
+      public_addr: "nginx-app.192.168.56.10.sslip.io"
       labels:
         env: lab
 {% endif %}
