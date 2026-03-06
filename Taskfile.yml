@@ -53,10 +53,27 @@ tasks:
   # =========================================================================
 
   status:
-    desc: "📊 Show Vagrant VM status"
+    desc: "📊 Show Vagrant VM status with IPs"
     silent: true
+    preconditions:
+      - sh: test -d {{.VAGRANT_DIR}}
+        msg: "VMs not found. Run 'task setup' first."
+    vars:
+      BASTION_IP:
+        sh: vagrant ssh {{.BASTION_VM}} -- ip -4 addr show eth1 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1 || echo '192.168.56.10'
+      TARGET_IP:
+        sh: vagrant ssh {{.TARGET_VM}} -- ip -4 addr show eth1 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1 || echo '192.168.56.11'
     cmds:
-      - vagrant status
+      - |
+        echo "╔════════════════════════════════════════════╗"
+        echo "║         VAGRANT VM STATUS & IPs            ║"
+        echo "╚════════════════════════════════════════════╝"
+        echo ""
+        vagrant status
+        echo ""
+        echo "  Bastion ({{.BASTION_VM}}):  {{.BASTION_IP}}"
+        echo "  Target  ({{.TARGET_VM}}):    {{.TARGET_IP}}"
+        echo ""
 
   health:
     desc: "🏥 Health check - verify both Teleport services are running"
@@ -102,6 +119,18 @@ tasks:
       - vagrant ssh {{.BASTION_VM}} -- cat /tmp/admin-invite.txt 2>/dev/null || echo "(invitation file not yet created - wait for provisioning)"
 
   # =========================================================================
+  # Database Operations
+  # =========================================================================
+
+  db:connect:
+    desc: "🗄️  Connect to MySQL via Teleport (requires tsh login)"
+    preconditions:
+      - sh: command -v tsh > /dev/null 2>&1
+        msg: "tsh not found. Install tsh from https://goteleport.com/docs/installation/"
+    cmds:
+      - tsh db connect mysql-lab --db-user=alice --db-name=labdb
+
+  # =========================================================================
   # Internal/Helper Tasks
   # =========================================================================
 
@@ -125,10 +154,6 @@ tasks:
             Ubuntu: sudo apt install ansible
             macOS: brew install ansible
             pip: pip install --user ansible
-      - sh: command -v vagrant plugin list | grep -q vagrant-vbguest
-        msg: |
-          ⚠️  Optional: vagrant-vbguest plugin improves VM stability.
-          Install via: vagrant plugin install vagrant-vbguest
     cmds:
       - echo "✓ All required dependencies found"
 

@@ -80,6 +80,14 @@ Ansible uses Jinja2 templates in role `templates/` directories:
 
 ## Environment & Tools
 
+### VM Access via Vagrant
+Direct SSH access to VMs for debugging:
+```bash
+vagrant ssh teleport-bastion    # Access bastion directly
+vagrant ssh target-server       # Access target directly
+```
+No Teleport authentication needed for direct Vagrant SSH access.
+
 ### Dependencies
 - **Vagrant**: VM management (must be installed)
 - **Ansible**: Configuration provisioning (must be installed)
@@ -147,10 +155,25 @@ demo-teleport/
 
 5. **Test Database**: MySQL includes `labdb` with a `messages` table for Teleport database access testing.
 
+## Documentation & References
+
+### Teleport Documentation
+Access Teleport documentation via Claude Code MCP context7:
+```
+Query: "Teleport MySQL TLS configuration" or relevant topic
+Library: /gravitational/teleport (high reputation, 7066 code snippets)
+```
+Use this to find official Teleport config examples and best practices for:
+- Database service configuration
+- Proxy service setup
+- TLS and certificate handling
+- Database protocol specifics
+
 ## Debugging Tips
 
 - **VM Won't provision**: Check `vagrant status`. If stuck, run `vagrant destroy -f && task setup`.
 - **Logs**: Use `task logs:bastion` or `task logs:target` to stream service logs.
-- **SSH Access**: Once provisioned, `vagrant ssh teleport-bastion` works without needing Teleport.
+- **SSH Access**: Once provisioned, `vagrant ssh teleport-bastion` and `vagrant ssh target-server` work without needing Teleport.
 - **Admin Invite**: Check `task display-admin-invite:bastion` if you've lost the URL.
 - **Service Check**: On target VM: `sudo systemctl status teleport`, `sudo systemctl status mysql`, `sudo systemctl status nginx`.
+- **Teleport Config**: Use context7 to verify configuration syntax and options before applying changes.
