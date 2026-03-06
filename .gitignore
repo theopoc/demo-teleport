@@ -10,8 +10,13 @@
 # Ansible inventaire dynamique
 ansible/inventory/dynamic.yml
 
-# Certificats locaux (pré-existants dans ce repo)
+# Certificats générés par Teleport lors du provisioning
 *.pem
+mysql-server.key
+mysql-server.crt
+mysql-server.cas
+mysql-server-chain.pem
+db-ca.pem
 
 # Configs locales non versionnées
 .envrc.local
