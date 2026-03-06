@@ -6,6 +6,7 @@
   vars:
     teleport_mode: agent
     teleport_nodename: target-server
+    teleport_app_service_enabled: true
     teleport_db_service_enabled: true
     mysql_data_dir: /var/lib/mysql
 

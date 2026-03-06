@@ -53,16 +53,63 @@ task display-admin-invite:bastion    # Get admin login URL
 
 ### 4. Access the infrastructure
 
-**Direct SSH (no Teleport needed):**
+#### SSH Access (no Teleport needed)
 ```bash
 vagrant ssh teleport-bastion
 vagrant ssh target-server
 ```
 
-**Via Teleport (after initial setup):**
+#### Via Teleport
 ```bash
-tsh login --proxy=192.168.56.10:3080
-tsh ssh user@target-server
+tsh login --proxy=192.168.56.10:3080 --insecure
+tsh ssh root@target-server
+```
+
+#### Database Access (MySQL via Teleport)
+```bash
+# Login first
+tsh login --proxy=192.168.56.10:3080 --insecure
+
+# List available databases
+tsh db ls
+
+# Connect to MySQL database
+tsh db login mysql-lab --db-user=alice
+tsh db connect mysql-lab
+
+# Execute queries via Teleport
+# Example:
+# mysql> SELECT * FROM labdb.messages;
+```
+
+**Available MySQL users:**
+- `alice` (certificate-based auth)
+- `teleport_admin` (certificate-based auth)
+
+#### Application Access (Nginx via Teleport CLI)
+```bash
+# Login first
+tsh login --proxy=192.168.56.10:3080 --insecure
+
+# List available applications
+tsh app ls
+
+# Get app connection info
+tsh app config nginx-app --insecure
+
+# Login to the app and get certificates
+tsh app login nginx-app --insecure
+
+# Access via curl (with certificate-based authentication)
+curl -s --insecure \
+  --cert ~/.tsh/keys/192.168.56.10/teleport-admin-app/teleport-lab/nginx-app.crt \
+  --key ~/.tsh/keys/192.168.56.10/teleport-admin-app/teleport-lab/nginx-app.key \
+  --resolve nginx-app.192.168.56.10:3080:192.168.56.10 \
+  https://nginx-app.192.168.56.10:3080/
+
+# Or use the web UI to access the app
+# Navigate to: https://192.168.56.10:3080
+# Go to Apps tab → nginx-app → Connect (opens in browser)
 ```
 
 ### 5. Cleanup
