@@ -1,27 +1,144 @@
 ---
-- name: Install MySQL server
+- name: Add MySQL official APT repository
+  apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/mysql-archive-keyring.gpg trusted=yes] http://repo.mysql.com/apt/ubuntu noble mysql-8.0"
+    state: present
+    filename: mysql-official-repo
+    update_cache: yes
+  ignore_errors: yes
+
+- name: Install Python MySQL module for Ansible
   apt:
-    name: mysql-server
+    name:
+      - python3-pymysql
+      - python3-mysqldb
+    state: present
     update_cache: yes
 
-- name: Enable MySQL service
-  systemd:
-    name: mysql
-    enabled: yes
-    state: started
+- name: Install MySQL server with OpenSSL support
+  apt:
+    name: mysql-server
+    state: present
+    update_cache: yes
 
-- name: Wait for MySQL to be ready
+- name: Copy MySQL certificates to MySQL data directory
+  copy:
+    src: "/vagrant/{{ item }}"
+    dest: "/var/lib/mysql/{{ item }}"
+    remote_src: yes
+    mode: '0644'
+    owner: mysql
+    group: mysql
+  loop:
+    - mysql-server.cas
+    - mysql-server.crt
+    - mysql-server.key
+
+- name: Set MySQL key file permissions (600)
+  file:
+    path: "/var/lib/mysql/mysql-server.key"
+    mode: '0600'
+    owner: mysql
+    group: mysql
+
+- name: Start and enable MySQL service
+  service:
+    name: mysql
+    state: started
+    enabled: yes
+
+- name: Wait for MySQL to be ready on port 3306
   wait_for:
+    host: localhost
     port: 3306
     delay: 5
     timeout: 60
 
-- name: Copy MySQL initialization script
+- name: Configure MySQL TLS via custom config file
   copy:
-    src: mysql-init.sh
-    dest: /opt/mysql-init.sh
-    mode: '0755'
+    content: |
+      [mysqld]
+      require_secure_transport=ON
+      ssl-ca=/var/lib/mysql/mysql-server.cas
+      ssl-cert=/var/lib/mysql/mysql-server.crt
+      ssl-key=/var/lib/mysql/mysql-server.key
+    dest: /etc/mysql/mysql.conf.d/99-teleport-tls.cnf
+    mode: '0644'
+    owner: root
+    group: root
+  register: mysql_tls_config
 
-- name: Run MySQL initialization script
-  shell: bash /opt/mysql-init.sh
-  changed_when: false
+- name: Restart MySQL to apply TLS configuration
+  service:
+    name: mysql
+    state: restarted
+  when: mysql_tls_config.changed
+
+- name: Wait for MySQL after restart
+  wait_for:
+    host: localhost
+    port: 3306
+    delay: 5
+    timeout: 60
+
+- name: Create MySQL labdb database
+  mysql_db:
+    name: labdb
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: Create messages table in labdb
+  mysql_query:
+    login_db: labdb
+    query: |
+      CREATE TABLE IF NOT EXISTS messages (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        message VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: Insert initial message
+  mysql_query:
+    login_db: labdb
+    query: "INSERT IGNORE INTO messages (message) VALUES ('Hello from Teleport Lab!')"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: Create MySQL users with certificate-based authentication
+  mysql_user:
+    name: "{{ item.name }}"
+    host: '%'
+    update_password: on_create
+    password: ''
+    priv: "{{ item.priv }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  loop:
+    - name: alice
+      priv: "labdb.*:ALL"
+    - name: teleport_admin
+      priv: "*.*:ALL"
+
+- name: Apply REQUIRE SUBJECT to users (certificate-based auth)
+  mysql_query:
+    query: "ALTER USER '{{ item }}'@'%' REQUIRE SUBJECT '/CN={{ item }}'"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  loop:
+    - alice
+    - teleport_admin
+
+- name: Flush MySQL privileges
+  mysql_query:
+    query: "FLUSH PRIVILEGES"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: Verify MySQL TLS is enabled
+  mysql_query:
+    query: "SHOW VARIABLES LIKE 'have_ssl'"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  register: have_ssl_result
+
+- name: Assert MySQL SSL is enabled
+  assert:
+    that:
+      - have_ssl_result.query_result[0][0].Value == 'YES'
+    fail_msg: "MySQL SSL support is not enabled!"
