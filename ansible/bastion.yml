@@ -16,10 +16,91 @@
     - teleport
 
   post_tasks:
-    - name: Display bastion information
+    - name: Wait for Teleport auth service to be ready
+      wait_for:
+        host: localhost
+        port: 3025
+        timeout: 60
+        delay: 2
+      register: teleport_ready
+
+    - name: Generate MySQL server certificates signed by Teleport CA
+      command: |
+        tctl auth sign --format=db \
+          --host=192.168.56.11 \
+          --host=target-server.local \
+          --out=/tmp/mysql-server \
+          --ttl=8760h
+      environment:
+        PATH: /usr/local/bin:/usr/bin:/bin
+      changed_when: false
+
+    - name: Export Teleport DB CA for MySQL client connections
+      command: tctl auth export --type=db
+      environment:
+        PATH: /usr/local/bin:/usr/bin:/bin
+      register: db_ca_export
+      changed_when: false
+
+    - name: Save DB CA to file
+      copy:
+        content: "{{ db_ca_export.stdout }}"
+        dest: /tmp/db-ca.pem
+        mode: '0644'
+
+    - name: Create certificate bundle for MySQL verification
+      shell: |
+        cat /tmp/mysql-server.crt /tmp/db-ca.pem > /tmp/mysql-server-chain.pem
+      changed_when: false
+
+    - name: Set certificate file permissions
+      file:
+        path: "/tmp/{{ item }}"
+        mode: '0644'
+      loop:
+        - mysql-server.cas
+        - mysql-server.crt
+        - mysql-server.key
+        - db-ca.pem
+        - mysql-server-chain.pem
+
+    - name: Copy certificates to shared /vagrant directory
+      copy:
+        src: "/tmp/{{ item }}"
+        dest: "/vagrant/{{ item }}"
+        remote_src: yes
+        mode: '0644'
+      loop:
+        - mysql-server.cas
+        - mysql-server.crt
+        - mysql-server.key
+        - db-ca.pem
+        - mysql-server-chain.pem
+
+    - name: Verify certificates in /vagrant
+      stat:
+        path: "/vagrant/{{ item }}"
+      register: cert_stat
+      failed_when: not cert_stat.stat.exists
+      loop:
+        - mysql-server.cas
+        - mysql-server.crt
+        - mysql-server.key
+        - db-ca.pem
+
+    - name: Display bastion deployment status
       debug:
         msg: |
-          ✓ Teleport Bastion deployed successfully
-          IP: {{ bastion_ip }}
-          Web UI: https://{{ bastion_ip }}:3080
-          (Check /tmp/admin-invite.txt for admin credentials)
+          ✅ Teleport Bastion deployed successfully
+
+          📍 IP: {{ bastion_ip }}
+          🔐 Web UI: https://{{ bastion_ip }}:3080
+
+          🔑 Certificates Generated:
+             ✓ mysql-server.crt
+             ✓ mysql-server.key
+             ✓ mysql-server.cas
+             ✓ mysql-server-chain.pem
+             ✓ db-ca.pem
+
+          📁 Location: /vagrant/ (for target access)

@@ -7,11 +7,59 @@
     teleport_mode: agent
     teleport_nodename: target-server
     teleport_db_service_enabled: true
+    mysql_data_dir: /var/lib/mysql
 
   pre_tasks:
-    - name: Ensure bastion_ip is set from group_vars
-      debug:
-        msg: "Using bastion_ip from group_vars: {{ bastion_ip }}"
+    - name: Set bastion_ip from hostvars
+      set_fact:
+        bastion_ip: "{{ hostvars['teleport-bastion']['bastion_ip'] }}"
+
+    - name: Create Teleport and MySQL certificate directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0700'
+        owner: root
+        group: root
+      loop:
+        - /etc/teleport/certs
+        - "{{ mysql_data_dir }}"
+
+    - name: Wait for certificates in /vagrant (max 5 min)
+      wait_for:
+        path: "/vagrant/{{ item }}"
+        timeout: 300
+        delay: 2
+      loop:
+        - mysql-server.cas
+        - mysql-server.crt
+        - mysql-server.key
+        - db-ca.pem
+
+    - name: Copy certificates to /etc/teleport/certs
+      copy:
+        src: "/vagrant/{{ item }}"
+        dest: "/etc/teleport/certs/{{ item }}"
+        remote_src: yes
+        mode: '0644'
+        owner: root
+        group: root
+      loop:
+        - mysql-server.cas
+        - mysql-server.crt
+        - mysql-server.key
+        - db-ca.pem
+
+    - name: Verify certificates copied to Teleport
+      stat:
+        path: "{{ item }}"
+      register: cert_check
+      failed_when: not cert_check.stat.exists
+      loop:
+        - /etc/teleport/certs/db-ca.pem
+        - /etc/teleport/certs/mysql-server.cas
+        - /etc/teleport/certs/mysql-server.crt
+        - /etc/teleport/certs/mysql-server.key
 
   roles:
     - nginx

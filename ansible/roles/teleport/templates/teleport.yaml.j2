@@ -26,6 +26,7 @@ proxy_service:
   web_listen_addr: 0.0.0.0:3080
   tunnel_listen_addr: 0.0.0.0:3024
   public_addr: "{{ bastion_ip }}:3080"
+  mysql_listen_addr: "0.0.0.0:3036"
 {% else %}
 auth_service:
   enabled: false
@@ -59,7 +60,7 @@ db_service:
       uri: localhost:3306
       static_labels:
         env: lab
-      admin_user:
-        name: teleport_admin
-        default_database: labdb
+      tls:
+        mode: verify-ca
+        ca_cert_file: /etc/teleport/certs/db-ca.pem
 {% endif %}
